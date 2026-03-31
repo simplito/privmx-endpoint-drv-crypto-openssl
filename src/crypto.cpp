@@ -16,6 +16,7 @@ limitations under the License.
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/ripemd.h>
+#include <openssl/err.h>
 
 #include "privmx/drv/crypto.h"
 
@@ -33,6 +34,8 @@ AesOptions getOptions(const char* config) {
     } else if (strcmp(config, "AES-256-CBC-NOPAD") == 0) {
         alg = "AES-256-CBC";
         padding = false;
+    } else if (strcmp(config, "AES-256-GCM") == 0) {
+        alg = "AES-256-GCM";
     } else if (strcmp(config, "AES-256-ECB-NOPAD") == 0) {
         alg = "AES-256-ECB";
         padding = false;
@@ -146,6 +149,69 @@ int privmxDrvCrypto_aesEncrypt(const char* key, const char* iv, const char* data
     return 0;
 }
 
+// Encrypt: AES-256-GCM
+int privmxDrvCrypto_aeadEncrypt(
+    const char* key,
+    const char* iv,
+    const char* aad, unsigned int aadlen,
+    const char* data, unsigned int datalen,
+    const char* config,
+    char** out, unsigned int* outlen,
+    char** tag, unsigned int* taglen
+) {
+    auto options = getOptions(config);
+    const size_t DEFAULT_TAG_LEN = 16;
+    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, options.alg.c_str(), NULL), EVP_CIPHER_free);
+    if (cipher.get() == NULL) {
+        return 1;
+    }
+    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (!ctx) { 
+        return 2;
+    }
+    const unsigned char* k = reinterpret_cast<const unsigned char*>(key);
+    const unsigned char* i = reinterpret_cast<const unsigned char*>(iv);
+    const unsigned char* a = reinterpret_cast<const unsigned char*>(aad);
+    const unsigned char* d = reinterpret_cast<const unsigned char*>(data);
+    // GCM doesn't expand data, so datalen is enough.
+    if (EVP_EncryptInit_ex(ctx.get(), cipher.get(), NULL, k, i) != 1) {
+        return 3;
+    }
+    unsigned char buf[datalen];
+    int buf_len = 0;
+    int extra_buf_len = 0;
+    if (aad && aadlen > 0) {
+        if (EVP_EncryptUpdate(ctx.get(), NULL, &extra_buf_len, a, aadlen) != 1) {
+            return 4;
+        }
+    }
+    if (EVP_EncryptUpdate(ctx.get(), buf + buf_len, &extra_buf_len, d, datalen) != 1) {
+        return 6;
+    }
+    buf_len += extra_buf_len;
+    if (EVP_EncryptFinal_ex(ctx.get(), buf + buf_len, &extra_buf_len) != 1) {
+        return 7;
+    }
+    buf_len += extra_buf_len;
+    
+    unsigned char tagbuf[DEFAULT_TAG_LEN];
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, DEFAULT_TAG_LEN, tagbuf) != 1) {
+        return 8;
+    }
+    EVP_CIPHER_CTX_cleanup(ctx.get());
+    // copy buf and tag
+    char* out_buf = reinterpret_cast<char*>(malloc(buf_len));
+    memcpy(out_buf, buf, buf_len);
+    char* out_tag = reinterpret_cast<char*>(malloc(DEFAULT_TAG_LEN));
+    memcpy(out_tag, tagbuf, DEFAULT_TAG_LEN);
+    // set result
+    *out = out_buf;
+    *outlen = static_cast<unsigned int>(buf_len);
+    *tag = out_tag;
+    *taglen = static_cast<unsigned int>(DEFAULT_TAG_LEN);
+    return 0;
+}
+
 int privmxDrvCrypto_aesDecrypt(const char* key, const char* iv, const char* data, unsigned int datalen, const char* config, char** out, unsigned int* outlen) {
     auto options = getOptions(config);
     std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, options.alg.c_str(), NULL), EVP_CIPHER_free);
@@ -184,6 +250,67 @@ int privmxDrvCrypto_aesDecrypt(const char* key, const char* iv, const char* data
     *outlen = buf_len;
     return 0;
 }
+
+// Decrypt: AES-256-GCM
+int privmxDrvCrypto_aeadDecrypt(
+    const char* key,
+    const char* iv,
+    const char* aad, unsigned int aadlen,
+    const char* data, unsigned int datalen,
+    const char* tag, unsigned int taglen,
+    const char* config,
+    char** out, unsigned int* outlen
+) {
+    auto options = getOptions(config);
+    const size_t EXPECTED_TAG_LEN = 16;
+    if(taglen != EXPECTED_TAG_LEN) {
+        return 1;
+    }
+    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, options.alg.c_str(), NULL), EVP_CIPHER_free);
+    if (cipher.get() == NULL) {
+        return 2;
+    }
+    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (ctx.get() == NULL) {
+        return 3;
+    }
+    const unsigned char* k = reinterpret_cast<const unsigned char*>(key);
+    const unsigned char* i = reinterpret_cast<const unsigned char*>(iv);
+    const unsigned char* a = reinterpret_cast<const unsigned char*>(aad);
+    const unsigned char* d = reinterpret_cast<const unsigned char*>(data);
+    const unsigned char* t = reinterpret_cast<const unsigned char*>(tag);
+
+    unsigned char buf[datalen];
+    int buf_len = 0;
+    int extra_buf_len = 0;
+    if (EVP_DecryptInit_ex(ctx.get(), cipher.get(), NULL, k, i) != 1) {
+        return 4;
+    }
+    if (aad && aadlen > 0) {
+        if (EVP_DecryptUpdate(ctx.get(), NULL, &extra_buf_len, a, aadlen) != 1) {
+            return 5;
+        }
+    }
+    if (EVP_DecryptUpdate(ctx.get(), buf + buf_len, &extra_buf_len, d, datalen) != 1) {
+        return 6;
+    }
+    buf_len += extra_buf_len;
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, taglen, (void*)t) != 1) {
+        return 7;
+    }
+    int final_len = 0;
+    if (EVP_DecryptFinal_ex(ctx.get(), buf + buf_len, &extra_buf_len) != 1) {
+        return 8;
+    }
+    buf_len += extra_buf_len;
+    EVP_CIPHER_CTX_cleanup(ctx.get());
+    char* out_buf = reinterpret_cast<char*>(malloc(buf_len));
+    memcpy(out_buf, buf, buf_len);
+    *out = out_buf;
+    *outlen = static_cast<unsigned int>(buf_len);
+    return 0;
+}
+
 
 int privmxDrvCrypto_pbkdf2(const char* pass, unsigned int passlen, const char* salt, unsigned int saltlen, int rounds, unsigned int length, const char* hash, char** out, unsigned int* outlen) {
     std::unique_ptr<EVP_MD, decltype(&EVP_MD_free)> evp_md(EVP_MD_fetch(NULL, hash, NULL), EVP_MD_free);
