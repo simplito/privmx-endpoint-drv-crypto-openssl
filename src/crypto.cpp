@@ -151,16 +151,18 @@ int privmxDrvCrypto_aesEncrypt(const char* key, const char* iv, const char* data
 }
 
 // Encrypt: AES-256-GCM
-int privmxDrvCrypto_aes256gcm_encrypt(
+int privmxDrvCrypto_aeadEncrypt(
     const char* key,
     const char* iv,
     const char* aad, unsigned int aadlen,
     const char* data, unsigned int datalen,
+    const char* config,
     char** out, unsigned int* outlen,
     char** tag, unsigned int* taglen
 ) {
+    auto options = getOptions(config);
     const size_t DEFAULT_TAG_LEN = 16;
-    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, "AES-256-GCM", NULL), EVP_CIPHER_free);
+    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, options.alg.c_str(), NULL), EVP_CIPHER_free);
     if (cipher.get() == NULL) {
         return 1;
     }
@@ -251,19 +253,21 @@ int privmxDrvCrypto_aesDecrypt(const char* key, const char* iv, const char* data
 }
 
 // Decrypt: AES-256-GCM
-int privmxDrvCrypto_aes256gcm_decrypt(
+int privmxDrvCrypto_aeadDecrypt(
     const char* key,
     const char* iv,
     const char* aad, unsigned int aadlen,
     const char* data, unsigned int datalen,
     const char* tag, unsigned int taglen,
+    const char* config,
     char** out, unsigned int* outlen
 ) {
+    auto options = getOptions(config);
     const size_t EXPECTED_TAG_LEN = 16;
     if(taglen != EXPECTED_TAG_LEN) {
         return 1;
     }
-    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, "AES-256-GCM", NULL), EVP_CIPHER_free);
+    std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)> cipher(EVP_CIPHER_fetch(NULL, options.alg.c_str(), NULL), EVP_CIPHER_free);
     if (cipher.get() == NULL) {
         return 2;
     }

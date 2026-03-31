@@ -22,13 +22,13 @@ int privmxDrvCrypto_md(const char* data, int datalen, const char* config, char**
 int privmxDrvCrypto_hmac(const char* key, unsigned int keylen, const char* data, int datalen, const char* config, char** out, unsigned int* outlen); // config: SHA1, SHA256, SHA512
 int privmxDrvCrypto_aesEncrypt(const char* key, const char* iv, const char* data, unsigned int datalen, const char* config, char** out, unsigned int* outlen); // config: AES-256-ECB-NOPAD, AES-256-CBC, AES-256-CBC-NOPAD
 int privmxDrvCrypto_aesDecrypt(const char* key, const char* iv, const char* data, unsigned int datalen, const char* config, char** out, unsigned int* outlen); // config: AES-256-ECB-NOPAD, AES-256-CBC, AES-256-CBC-NOPAD
-int privmxDrvCrypto_aes256gcm_encrypt(
-    const char* key,const char* iv, const char* aad, unsigned int aadlen, const char* data, unsigned int datalen,
+int privmxDrvCrypto_aeadEncrypt(
+    const char* key,const char* iv, const char* aad, unsigned int aadlen, const char* data, unsigned int datalen, const char* config,
     char** out, unsigned int* outlen, char** tag, unsigned int* taglen
 );
-int privmxDrvCrypto_aes256gcm_decrypt(
+int privmxDrvCrypto_aeadDecrypt(
     const char* key, const char* iv, const char* aad, unsigned int aadlen, const char* data, unsigned int datalen, const char* tag, unsigned int taglen,
-    char** out, unsigned int* outlen
+        const char* config, char** out, unsigned int* outlen
 );
 int privmxDrvCrypto_pbkdf2(const char* pass, unsigned int passlen, const char* salt, unsigned int saltlen, int rounds, unsigned int length, const char* hash, char** out, unsigned int* outlen);
 int privmxDrvCrypto_freeMem(void* ptr);
