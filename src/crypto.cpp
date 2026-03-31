@@ -58,7 +58,6 @@ int privmxDrvCrypto_randomBytes(char* buf, unsigned int len) {
 int privmxDrvCrypto_md(const char* data, int datalen, const char* config, char** out, unsigned int* outlen) {
     std::unique_ptr<EVP_MD, decltype(&EVP_MD_free)> evp_md(EVP_MD_fetch(NULL, config, NULL), EVP_MD_free);
     if (evp_md.get() == NULL) {
-        fprintf(stderr, "%s\n", ERR_error_string(ERR_get_error(), NULL));
         return 1;
     }
     std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
