@@ -13,6 +13,7 @@ limitations under the License.
 #include <string.h>
 #include <memory>
 #include <string>
+#include <vector>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/ripemd.h>
@@ -130,19 +131,19 @@ int privmxDrvCrypto_aesEncrypt(const char* key, const char* iv, const char* data
     if (!options.padding && EVP_CIPHER_CTX_set_padding(raw_ctx, 0) != 1) {
         return 4;
     }
-    unsigned char buf[datalen + EVP_CIPHER_block_size(cipher.get())];
+    std::vector<unsigned char> buf(datalen + EVP_CIPHER_block_size(cipher.get()));
     int buf_len = 0;
     const unsigned char* d = reinterpret_cast<const unsigned char*>(data);
-    if (EVP_EncryptUpdate(raw_ctx, buf, &buf_len, d, datalen) != 1) {
+    if (EVP_EncryptUpdate(raw_ctx, buf.data(), &buf_len, d, datalen) != 1) {
         return 5;
     }
     int final_len = 0;
-    if (EVP_EncryptFinal_ex(raw_ctx, buf + buf_len, &final_len) != 1) {
+    if (EVP_EncryptFinal_ex(raw_ctx, buf.data() + buf_len, &final_len) != 1) {
         return 6;
     }
     buf_len += final_len;
     EVP_CIPHER_CTX_cleanup(raw_ctx);
-    char* buf_as_char = reinterpret_cast<char*>(buf);
+    char* buf_as_char = reinterpret_cast<char*>(buf.data());
     *out = reinterpret_cast<char*>(malloc(buf_len));
     memcpy(*out, buf_as_char, buf_len);
     *outlen = buf_len;
@@ -177,7 +178,7 @@ int privmxDrvCrypto_aeadEncrypt(
     if (EVP_EncryptInit_ex(ctx.get(), cipher.get(), NULL, k, i) != 1) {
         return 3;
     }
-    unsigned char buf[datalen];
+    std::vector<unsigned char> buf(datalen);
     int buf_len = 0;
     int extra_buf_len = 0;
     if (aad && aadlen > 0) {
@@ -185,11 +186,11 @@ int privmxDrvCrypto_aeadEncrypt(
             return 4;
         }
     }
-    if (EVP_EncryptUpdate(ctx.get(), buf + buf_len, &extra_buf_len, d, datalen) != 1) {
+    if (EVP_EncryptUpdate(ctx.get(), buf.data() + buf_len, &extra_buf_len, d, datalen) != 1) {
         return 6;
     }
     buf_len += extra_buf_len;
-    if (EVP_EncryptFinal_ex(ctx.get(), buf + buf_len, &extra_buf_len) != 1) {
+    if (EVP_EncryptFinal_ex(ctx.get(), buf.data() + buf_len, &extra_buf_len) != 1) {
         return 7;
     }
     buf_len += extra_buf_len;
@@ -201,7 +202,7 @@ int privmxDrvCrypto_aeadEncrypt(
     EVP_CIPHER_CTX_cleanup(ctx.get());
     // copy buf and tag
     char* out_buf = reinterpret_cast<char*>(malloc(buf_len));
-    memcpy(out_buf, buf, buf_len);
+    memcpy(out_buf, buf.data(), buf_len);
     char* out_tag = reinterpret_cast<char*>(malloc(DEFAULT_TAG_LEN));
     memcpy(out_tag, tagbuf, DEFAULT_TAG_LEN);
     // set result
@@ -232,19 +233,19 @@ int privmxDrvCrypto_aesDecrypt(const char* key, const char* iv, const char* data
     if (!options.padding && EVP_CIPHER_CTX_set_padding(raw_ctx, 0) != 1) {
         return 4;
     }
-    unsigned char buf[datalen + EVP_CIPHER_block_size(cipher.get())];
+    std::vector<unsigned char> buf(datalen + EVP_CIPHER_block_size(cipher.get()));
     int buf_len = 0;
     const unsigned char* d = reinterpret_cast<const unsigned char*>(data);
-    if (EVP_DecryptUpdate(raw_ctx, buf, &buf_len, d, datalen) != 1) {
+    if (EVP_DecryptUpdate(raw_ctx, buf.data(), &buf_len, d, datalen) != 1) {
         return 5;
     }
     int final_len = 0;
-    if (EVP_DecryptFinal_ex(raw_ctx, buf + buf_len, &final_len) != 1) {
+    if (EVP_DecryptFinal_ex(raw_ctx, buf.data() + buf_len, &final_len) != 1) {
         return 6;
     }
     buf_len += final_len;
     EVP_CIPHER_CTX_cleanup(raw_ctx);
-    char* buf_as_char = reinterpret_cast<char*>(buf);
+    char* buf_as_char = reinterpret_cast<char*>(buf.data());
     *out = reinterpret_cast<char*>(malloc(buf_len));
     memcpy(*out, buf_as_char, buf_len);
     *outlen = buf_len;
@@ -280,7 +281,7 @@ int privmxDrvCrypto_aeadDecrypt(
     const unsigned char* d = reinterpret_cast<const unsigned char*>(data);
     const unsigned char* t = reinterpret_cast<const unsigned char*>(tag);
 
-    unsigned char buf[datalen];
+    std::vector<unsigned char> buf(datalen);
     int buf_len = 0;
     int extra_buf_len = 0;
     if (EVP_DecryptInit_ex(ctx.get(), cipher.get(), NULL, k, i) != 1) {
@@ -291,7 +292,7 @@ int privmxDrvCrypto_aeadDecrypt(
             return 5;
         }
     }
-    if (EVP_DecryptUpdate(ctx.get(), buf + buf_len, &extra_buf_len, d, datalen) != 1) {
+    if (EVP_DecryptUpdate(ctx.get(), buf.data() + buf_len, &extra_buf_len, d, datalen) != 1) {
         return 6;
     }
     buf_len += extra_buf_len;
@@ -299,13 +300,13 @@ int privmxDrvCrypto_aeadDecrypt(
         return 7;
     }
     int final_len = 0;
-    if (EVP_DecryptFinal_ex(ctx.get(), buf + buf_len, &extra_buf_len) != 1) {
+    if (EVP_DecryptFinal_ex(ctx.get(), buf.data() + buf_len, &extra_buf_len) != 1) {
         return 8;
     }
     buf_len += extra_buf_len;
     EVP_CIPHER_CTX_cleanup(ctx.get());
     char* out_buf = reinterpret_cast<char*>(malloc(buf_len));
-    memcpy(out_buf, buf, buf_len);
+    memcpy(out_buf, buf.data(), buf_len);
     *out = out_buf;
     *outlen = static_cast<unsigned int>(buf_len);
     return 0;
